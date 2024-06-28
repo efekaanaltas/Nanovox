@@ -7,10 +7,14 @@
 #define DB_PERLIN_IMPL
 #include "perlin.h"
 
-u32 ScreenWidth = 1920;
-u32 ScreenHeight = 1080;
+#include <thread>
+#include <mutex>
+#include <chrono>
 
-u32 ChunkDim = 16;
+u32 ScreenWidth = 1920/2;
+u32 ScreenHeight = 1080/2;
+
+u32 ChunkDim = 32;
 u32 ChunkDim2 = ChunkDim * ChunkDim;
 u32 ChunkDim3 = ChunkDim * ChunkDim * ChunkDim;
 
@@ -31,11 +35,22 @@ f32 lastFrameTime = 0.0f;
 b32 firstMouse = true;
 f32 fov = 90.0f;
 
+std::mutex chunkPushMutex;
+
+struct CubeFace
+{
+	i4 data; // XYZ pos, W: ----Mat-Face
+};
+
+struct Chunk
+{
+	i3 chunkPos;
+	std::vector<CubeFace> faces;
+};
+
 u32 materialCount = 6;
 
-std::random_device rd;
-std::mt19937 rng(rd());
-std::uniform_real_distribution<> random(0, materialCount);
+std::vector<Chunk> chunks;
 
 void GLFWFramebufferSizeCallback(GLFWwindow* window, s32 width, s32 height)
 {
@@ -122,18 +137,22 @@ void ProcessInput(GLFWwindow* window)
 	}
 }
 
-struct CubeFace
-{
-	i3 pos;
-	u32 face;
-	u32 material;
-	v3 a;
-};
-
 u32 ChunkArrayIndex(u32 x, u32 y, u32 z)
 {
 	return x + y*ChunkDim + z*ChunkDim2;
 }
+
+u32 SampleVoxel(i3 pos, i3 chunkPos)
+{
+	i3 samplePos = pos + chunkPos * (s32)ChunkDim;
+
+	f32 frequency = 0.02f;
+	f32 noise = db::perlin(samplePos.x * frequency, samplePos.y * frequency, samplePos.z * frequency);
+	f32 vertical = -((pos.y / (float)ChunkDim) - 0.5f);
+	vertical *= vertical * vertical;
+	return (0.1f * noise + vertical < 0.0) ? 1 : 0;
+}
+
 
 u32 ChunkArrayIndex(i3 pos)
 {
@@ -171,8 +190,7 @@ std::vector<CubeFace> ConstructChunk(u32* voxels, i3 chunkPos = i3(0))
 				if (voxels[ChunkArrayIndex(x, y, z)] != 0)
 				{
 					CubeFace cubeFace;
-					cubeFace.pos = i3(x,y,z) + (s32)ChunkDim*chunkPos;
-					//cubeFace.material = 0;//random(rng);
+					cubeFace.data = i4(i3(x,y,z) + (s32)ChunkDim*chunkPos, 0);
 					u32 directions[6] = {};
 
 					for (u32 i = 0; i < 6; i++)
@@ -182,7 +200,7 @@ std::vector<CubeFace> ConstructChunk(u32* voxels, i3 chunkPos = i3(0))
 						if (neighborPos.x < 0 || neighborPos.y < 0 || neighborPos.z < 0
 						||  neighborPos.x >= ChunkDim || neighborPos.y >= ChunkDim || neighborPos.z >= ChunkDim)
 						{
-							directions[i] = 1; // 0: Put face at boundaries, 1: Don't
+							directions[i] = SampleVoxel(neighborPos, chunkPos);
 						}
 						else
 						{
@@ -191,7 +209,12 @@ std::vector<CubeFace> ConstructChunk(u32* voxels, i3 chunkPos = i3(0))
 
 						if (!directions[i])
 						{
-							cubeFace.face = i;
+							cubeFace.data.w = 0;
+							cubeFace.data.w |= i;
+							
+							f32 noise = db::perlin(x * 0.4684f, y * 0.684f, z * 0.4684f);
+							u32 material = floor((noise+1)*0.5f * materialCount);
+							cubeFace.data.w |= (material << 3);
 							faces.push_back(cubeFace);
 						}
 					}
@@ -203,12 +226,89 @@ std::vector<CubeFace> ConstructChunk(u32* voxels, i3 chunkPos = i3(0))
 	return faces;
 }
 
+u32* GenerateChunkFilledness(i3 chunkPos)
+{
+	u32* voxels = (u32*)malloc(ChunkDim3 * sizeof(u32));
+
+	for (u32 z = 0; z < ChunkDim; z++)
+	for (u32 y = 0; y < ChunkDim; y++)
+	for (u32 x = 0; x < ChunkDim; x++)
+	{
+		voxels[ChunkArrayIndex(x, y, z)] = SampleVoxel({ x,y,z }, chunkPos);
+	}
+
+	return voxels;
+}
+
+b32 TrySpawnChunks(s32 kernelSize)
+{
+	v3 camPosXZ = v3(camPos.x, 0, camPos.z);
+	i3 camChunkPos = camPosXZ / (f32)ChunkDim;
+
+	b32 generatedAChunk = false;
+	for (s32 offsetZ = -kernelSize; offsetZ <= kernelSize; offsetZ++)
+	{
+		for (s32 offsetX = -kernelSize; offsetX <= kernelSize; offsetX++)
+		{
+			b32 hasChunkHere = false;
+			for (u32 i = 0; i < chunks.size(); i++)
+			{
+				if (chunks[i].chunkPos == camChunkPos + i3(offsetX, 0, offsetZ))
+				{
+					hasChunkHere = true;
+					break;
+				}
+			}
+
+			i3 newChunkPos = camChunkPos + i3(offsetX, 0, offsetZ);
+
+			v3 chunkCenter = v3(newChunkPos * (s32)ChunkDim) + v3(ChunkDim/2);
+			v3 chunkCenterDirFromCam = glm::normalize(chunkCenter - camPos);
+			b32 probablyInView = glm::dot(camFront, chunkCenterDirFromCam) > 0;
+			b32 tooClose = glm::distance((v3)camChunkPos, (v3)newChunkPos) < 20;
+			b32 shouldRender = probablyInView | tooClose;
+
+			if (!hasChunkHere && shouldRender)
+			{
+				u32* chunkFilledness = GenerateChunkFilledness(newChunkPos);
+				Chunk chunk;
+				chunk.chunkPos = newChunkPos;
+				if(chunkPushMutex.try_lock())
+				{
+					chunk.faces = ConstructChunk(chunkFilledness, newChunkPos);
+					chunks.push_back(chunk);
+					chunkPushMutex.unlock();
+				}
+				generatedAChunk = true;
+			}
+		}
+	}
+
+	if (!generatedAChunk && kernelSize < 20)
+	{
+		TrySpawnChunks(kernelSize + 4);
+	}
+	
+	return true;
+}
+
+void ChunkGeneratorThread(GLFWwindow* window)
+{
+	while (!glfwWindowShouldClose(window))
+	{
+		using namespace std::chrono_literals;
+		TrySpawnChunks(1);
+		std::this_thread::sleep_for(100ms);
+	}
+}
+
 int main()
 {
 	glfwInit();
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	//glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
 	//glfwWindowHint(GLFW_SAMPLES, 4);
 
 	GLFWwindow* window = glfwCreateWindow(ScreenWidth, ScreenHeight, "Nanovox", 0, 0);
@@ -233,6 +333,7 @@ int main()
 	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 	glEnable(GL_DEPTH_TEST);
+	glEnable(GL_CULL_FACE);
 
 	u32 vao;
 	glGenVertexArrays(1, &vao);
@@ -240,68 +341,12 @@ int main()
 
 	GLFWMouseCallback(window, ScreenWidth/2, ScreenHeight/2); // Initialize camera facing and mouse deltas
 
-	u32 ChunkCountAcrossOneAxis = 20;
-
-	u32* voxels = (u32*)malloc(ChunkCountAcrossOneAxis * ChunkCountAcrossOneAxis * ChunkDim3 * sizeof(u32));
-
-	for (u32 chunkZ = 0; chunkZ < ChunkCountAcrossOneAxis; chunkZ++)
-	{
-		for (u32 chunkX = 0; chunkX < ChunkCountAcrossOneAxis; chunkX++)
-		{
-			for (u32 z = 0; z < ChunkDim; z++)
-			{
-				for (u32 y = 0; y < ChunkDim; y++)
-				{
-					for (u32 x = 0; x < ChunkDim; x++)
-					{
-						s32 xPos = x + chunkX*ChunkDim;
-						s32 yPos = y;
-						s32 zPos = z + chunkZ*ChunkDim;
-
-						static f32 displacement = 0.0f;
-						displacement += 0.000001f * dt;
-						f32 frequency = 0.02f;
-						f32 noise = db::perlin(xPos * frequency + displacement, yPos * frequency + displacement, zPos * frequency);
-						f32 vertical = -((y / (float)ChunkDim) - 0.5f);
-						vertical *= vertical * vertical;
-						voxels[ChunkArrayIndex(x, y, z) + chunkX * ChunkDim3 + chunkZ * ChunkDim3 * ChunkCountAcrossOneAxis] = (0.1f * noise + vertical < 0.0) ? 1 : 0;
-					}
-				}
-			}
-		}
-	}
-
-	std::vector<CubeFace> faces;
-	for (u32 chunkIndex = 0; chunkIndex < ChunkCountAcrossOneAxis*ChunkCountAcrossOneAxis; chunkIndex++)
-	{
-		std::vector<CubeFace> chunkFaces = ConstructChunk(&voxels[0 + chunkIndex * ChunkDim3], i3(chunkIndex%ChunkCountAcrossOneAxis, 0, chunkIndex/ChunkCountAcrossOneAxis));
-		faces.insert(faces.end(), chunkFaces.begin(), chunkFaces.end());
-	}
-
-	u32 dirCounts[6] = {};
-	for (u32 i = 0; i < faces.size(); i++)
-	{
-		CubeFace cubeFace = faces[i];
-		dirCounts[cubeFace.face]++;
-	}
-
-	for (u32 i = 0; i < 6; i++)
-	{
-		printf("Face %d count: %d\n", i, dirCounts[i]);
-	}
-
-	u32 ssbo;
-	glGenBuffers(1, &ssbo);
-	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
-	glBufferData(GL_SHADER_STORAGE_BUFFER, faces.size() * sizeof(CubeFace), (void*)faces.data(), GL_DYNAMIC_DRAW);
-	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssbo);
-
 	Shader shader("shaders/base.vert", "shaders/base.frag");
 
 	shader.Bind();
 
 	f32 near = 0.1f;
-	f32 far = 100.0f;
+	f32 far = 500.0f;
 
 	mat4 projection = glm::perspective(glm::radians(90.0f), (float)ScreenWidth / (float)ScreenHeight, near, far);
 	shader.Set("projection", projection);
@@ -314,6 +359,18 @@ int main()
 	glClearColor(skyColor.x, skyColor.y, skyColor.z, 1);
 	shader.Set("fogColor", skyColor);
 
+	u32 ssbo;
+	glGenBuffers(1, &ssbo);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+
+	u32 ChunkCountAcrossOneAxis = 10;
+
+	std::thread chunkThreads[19];
+	for (u32 i = 0; i < 19; i++)
+	{
+		chunkThreads[i] = std::thread(ChunkGeneratorThread, window);
+	}
+
 	while (!glfwWindowShouldClose(window))
 	{
 		f32 time = (f32)glfwGetTime();
@@ -321,10 +378,10 @@ int main()
 		lastFrameTime = time;
 		frameCount++;
 
-		if (frameCount % (1<<5) == 0)
-		{
-			printf("Frametime: %.3fms, %.1f FPS\n", dt * 1000.0f, 1/(dt));
-		}
+		//if (frameCount % (1<<5) == 0)
+		//{
+		//	printf("Frametime: %.3fms, %.1f FPS, Chunk count: %d\n", dt * 1000.0f, 1/(dt), chunks.size());
+		//}
 
 		ProcessInput(window);
 
@@ -333,12 +390,29 @@ int main()
 		mat4 view = glm::lookAt(camPos, camPos + camFront, camUp);
 		shader.Set("view", view);
 			
-		glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, faces.size());
+		for (u32 i = 0; i < chunks.size(); i++)
+		{
+			v3 worldPos = chunks[i].chunkPos * (s32)ChunkDim;
+			v3 camPosXZ = { camPos.x, 0, camPos.z };
+			f32 distance = glm::distance(worldPos, camPosXZ);
+			if (distance < 500)
+			{
+				std::vector<CubeFace> faces = chunks[i].faces;
+				glBufferData(GL_SHADER_STORAGE_BUFFER, faces.size() * sizeof(CubeFace), (void*)faces.data(), GL_DYNAMIC_DRAW);
+				glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssbo);
+
+				glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, faces.size());
+			}
+		}
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 	}
 
+	for (u32 i = 0; i < 19; i++)
+	{
+		chunkThreads[i].join();
+	}
 	glfwTerminate();
 	return 0;
 }

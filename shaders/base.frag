@@ -14,10 +14,7 @@ uniform float far = 100.0;
 
 struct CubeFace
 {
-    ivec3 pos;
-    int face;
-	int material;
-	vec3 a;
+	ivec4 data;
 };
 
 layout(std430, binding = 2) readonly buffer voxels
@@ -46,31 +43,35 @@ void main()
 	vec3 lightDir = vec3(0.5, -0.7, 0.5);
 	lightDir = normalize(lightDir);
 
-	int face = faces[instanceID].face;
+	CubeFace cubeFace = faces[instanceID];
+
+	int face = cubeFace.data.w & 0x7;
+	int material = (cubeFace.data.w >> 3);
 	vec3 normal = NormalFromFaceDirection(face);
 	float lighting = max(dot(lightDir, normal), 0.0);
 
-	vec3 materials[8] = vec3[]
+	vec3 materials[6] = vec3[]
 	(
+		vec3(5/255.0, 146/255.0, 18/255.0),
+		vec3(6/255.0, 208/255.0, 1/255.0),
+		vec3(155/255.0, 236/255.0, 0/255.0),
+		vec3(43/255.0, 255/255.0, 144/255.0),
 		vec3(0.1, 1.0, 0.1),
-		vec3(0.8, 0.9, 0.2),
-		vec3(0.1, 0.8, 0.7),
-		vec3(0.1, 0.2, 0.7),
-		vec3(0.9, 0.2, 0.7),
-		vec3(0.9, 0.2, 0.1),
-		vec3(1, 1, 1),
-		vec3(0, 0, 0)
+		vec3(0.8, 0.9, 0.2)
 	);
 
-	vec3 col = materials[0];//materials[faces[instanceID].material];
+	vec3 mainGreen = materials[3];
+	vec3 col = materials[material];
+	col = mix(col, mainGreen, 0.4);
+
+	vec3 seaColor = vec3(0.2, 0.491, 0.601) + vec3(0.2);
+
+	col = mix(col, seaColor, WorldPos.yyy/16.0);
 
 	vec3 ambient = col/3.0;
-
 	vec3 shaded = col*lighting+ambient;
-
 	float z = gl_FragCoord.z;
-
-	float linearDepth = LinearDepth(z, 0.1, 100.0);
+	float linearDepth = LinearDepth(z, near, far);
 	float linearDepth01 = linearDepth / far;
 	vec3 fogged = mix(shaded, fogColor, clamp(linearDepth01, 0, 1));
 

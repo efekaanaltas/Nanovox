@@ -11,10 +11,7 @@ int ChunkDim = 16;
 
 struct CubeFace
 {
-    ivec3 pos;
-    int face;
-    int material;
-    vec3 a;
+	ivec4 data;
 };
 
 layout(std430, binding = 2) readonly buffer voxels
@@ -29,25 +26,20 @@ void main()
 	const vec3 positions[4] = vec3[]
     (
         vec3(0, 0, 0),
-        vec3(+1, 0, 0),
         vec3(0, 0, +1),
+        vec3(+1, 0, 0),
         vec3(+1, 0, +1)
-    );
-    const vec2 coords[4] = vec2[]
-    (
-        vec2(0, 0),
-        vec2(1, 0),
-        vec2(0, 1),
-        vec2(1, 1)
     );
 
 	VertexPos = positions[gl_VertexID % 4];
 
-    vec3 pos = vec3(faces[gl_InstanceID].pos);
-    int face = faces[gl_InstanceID].face;
+    CubeFace cubeFace = faces[gl_InstanceID];
+    vec3 pos = cubeFace.data.xyz;
+    int face = cubeFace.data.w & 0x7;
 
     if(face == 3)
     {
+        VertexPos.xz = VertexPos.zx;
         VertexPos.y++;
     }
     if(face == 1)
@@ -57,6 +49,7 @@ void main()
     }
     if(face == 0)
     {
+        VertexPos.xz = VertexPos.zx;
         VertexPos.xy = VertexPos.yx;
     }
     if(face == 5)
@@ -66,6 +59,7 @@ void main()
     }
     if(face == 4)
     {
+        VertexPos.xz = VertexPos.zx;
         VertexPos.xyz = VertexPos.xzy;
     }
 
