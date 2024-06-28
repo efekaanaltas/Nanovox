@@ -1,0 +1,107 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.5.json",
+  "runs": [
+    {
+      "results": [],
+      "tool": {
+        "driver": {
+          "name": "PREfast",
+          "fullName": "PREfast Code Analysis",
+          "version": "14.34.31933.0",
+          "informationUri": "https://aka.ms/cpp/ca"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "artifacts": [
+        {
+          "location": {
+            "uri": "file:///c:/dev/cockroach/cockroach/vendor/glfw/src/win32_module.c"
+          },
+          "roles": [
+            "analysisTarget"
+          ],
+          "hashes": {
+            "sha-256": "406c1ee68d1d1817b559065d710620c64e3ddc3b6223c106289ec95a4affd637"
+          }
+        },
+        {
+          "location": {
+            "uri": "file:///c:/dev/cockroach/cockroach/vendor/glfw/src/internal.h"
+          },
+          "hashes": {
+            "sha-256": "300b3bc4bf306fd3011cb70f2fb7a3320adc16153c084fc382b37513ce7c7dc1"
+          }
+        },
+        {
+          "location": {
+            "uri": "file:///c:/dev/cockroach/cockroach/vendor/glfw/include/glfw/glfw3.h"
+          },
+          "hashes": {
+            "sha-256": "55448f13ff3fad39850c9950478711af7af9535c4214e1d87373446c1c24debe"
+          }
+        },
+        {
+          "location": {
+            "uri": "file:///c:/dev/cockroach/cockroach/vendor/glfw/src/platform.h"
+          },
+          "hashes": {
+            "sha-256": "aeff89e47c27297ec8813848ad505078f64128ada9c2d34d111899e7705406f3"
+          }
+        },
+        {
+          "location": {
+            "uri": "file:///c:/dev/cockroach/cockroach/vendor/glfw/src/null_platform.h"
+          },
+          "hashes": {
+            "sha-256": "0ac2f18d073bc6b1ac49837d8ffa96694d93f7f1d4cef864024bbb4c314cde47"
+          }
+        },
+        {
+          "location": {
+            "uri": "file:///c:/dev/cockroach/cockroach/vendor/glfw/src/win32_platform.h"
+          },
+          "hashes": {
+            "sha-256": "b55be02a19ac77a01b26fa0b68f7654e132d1343e2b7c98197f6b9fa0b4d447d"
+          }
+        },
+        {
+          "location": {
+            "uri": "file:///c:/dev/cockroach/cockroach/vendor/glfw/src/null_joystick.h"
+          },
+          "hashes": {
+            "sha-256": "196092bb3c4afc7e743a94cee621f6a6e31de1e36ccbb34175d8046824285a3d"
+          }
+        },
+        {
+          "location": {
+            "uri": "file:///c:/dev/cockroach/cockroach/vendor/glfw/src/win32_joystick.h"
+          },
+          "hashes": {
+            "sha-256": "e40cf1fafdb84db747644070c93d0debfb9cc77b4153522631189202d51d9109"
+          }
+        },
+        {
+          "location": {
+            "uri": "file:///c:/dev/cockroach/cockroach/vendor/glfw/src/win32_thread.h"
+          },
+          "hashes": {
+            "sha-256": "c8a4581760ced98d7ddfae1669a719be5815b3e3c591488a65a636305c75944e"
+          }
+        },
+        {
+          "location": {
+            "uri": "file:///c:/dev/cockroach/cockroach/vendor/glfw/src/win32_time.h"
+          },
+          "hashes": {
+            "sha-256": "95d9f56db8a87f9195757b395f0917e4d4e682ee833ee4bb6e2c8c4ffb81b936"
+          }
+        }
+      ]
+    }
+  ]
+}
