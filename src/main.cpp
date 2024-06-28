@@ -11,8 +11,8 @@
 #include <mutex>
 #include <chrono>
 
-u32 ScreenWidth = 1920/2;
-u32 ScreenHeight = 1080/2;
+u32 ScreenWidth = 1920;
+u32 ScreenHeight = 1080;
 
 u32 ChunkDim = 32;
 u32 ChunkDim2 = ChunkDim * ChunkDim;
@@ -150,7 +150,8 @@ u32 SampleVoxel(i3 pos, i3 chunkPos)
 	f32 noise = db::perlin(samplePos.x * frequency, samplePos.y * frequency, samplePos.z * frequency);
 	f32 vertical = -((pos.y / (float)ChunkDim) - 0.5f);
 	vertical *= vertical * vertical;
-	return (0.1f * noise + vertical < 0.0) ? 1 : 0;
+	return noise < 0.0f ? 1 : 0;
+	//return (0.1f * noise + vertical < 0.0) ? 1 : 0;
 }
 
 
@@ -242,51 +243,53 @@ u32* GenerateChunkFilledness(i3 chunkPos)
 
 b32 TrySpawnChunks(s32 kernelSize)
 {
-	v3 camPosXZ = v3(camPos.x, 0, camPos.z);
-	i3 camChunkPos = camPosXZ / (f32)ChunkDim;
+	i3 camChunkPos = camPos / (f32)ChunkDim;
 
 	b32 generatedAChunk = false;
 	for (s32 offsetZ = -kernelSize; offsetZ <= kernelSize; offsetZ++)
 	{
-		for (s32 offsetX = -kernelSize; offsetX <= kernelSize; offsetX++)
+		for (s32 offsetY = -kernelSize; offsetY <= kernelSize; offsetY++)
 		{
-			b32 hasChunkHere = false;
-			for (u32 i = 0; i < chunks.size(); i++)
+			for (s32 offsetX = -kernelSize; offsetX <= kernelSize; offsetX++)
 			{
-				if (chunks[i].chunkPos == camChunkPos + i3(offsetX, 0, offsetZ))
+				b32 hasChunkHere = false;
+				for (u32 i = 0; i < chunks.size(); i++)
 				{
-					hasChunkHere = true;
-					break;
+					if (chunks[i].chunkPos == camChunkPos + i3(offsetX, offsetY, offsetZ))
+					{
+						hasChunkHere = true;
+						break;
+					}
 				}
-			}
 
-			i3 newChunkPos = camChunkPos + i3(offsetX, 0, offsetZ);
+				i3 newChunkPos = camChunkPos + i3(offsetX, offsetY, offsetZ);
 
-			v3 chunkCenter = v3(newChunkPos * (s32)ChunkDim) + v3(ChunkDim/2);
-			v3 chunkCenterDirFromCam = glm::normalize(chunkCenter - camPos);
-			b32 probablyInView = glm::dot(camFront, chunkCenterDirFromCam) > 0;
-			b32 tooClose = glm::distance((v3)camChunkPos, (v3)newChunkPos) < 20;
-			b32 shouldRender = probablyInView | tooClose;
+				v3 chunkCenter = v3(newChunkPos * (s32)ChunkDim) + v3(ChunkDim/2);
+				v3 chunkCenterDirFromCam = glm::normalize(chunkCenter - camPos);
+				b32 probablyInView = glm::dot(camFront, chunkCenterDirFromCam) > 0;
+				b32 tooClose = glm::distance((v3)camChunkPos, (v3)newChunkPos) < 20;
+				b32 shouldRender = probablyInView | tooClose;
 
-			if (!hasChunkHere && shouldRender)
-			{
-				u32* chunkFilledness = GenerateChunkFilledness(newChunkPos);
-				Chunk chunk;
-				chunk.chunkPos = newChunkPos;
-				if(chunkPushMutex.try_lock())
+				if (!hasChunkHere && shouldRender)
 				{
-					chunk.faces = ConstructChunk(chunkFilledness, newChunkPos);
-					chunks.push_back(chunk);
-					chunkPushMutex.unlock();
+					u32* chunkFilledness = GenerateChunkFilledness(newChunkPos);
+					Chunk chunk;
+					chunk.chunkPos = newChunkPos;
+					if(chunkPushMutex.try_lock())
+					{
+						chunk.faces = ConstructChunk(chunkFilledness, newChunkPos);
+						chunks.push_back(chunk);
+						chunkPushMutex.unlock();
+					}
+					generatedAChunk = true;
 				}
-				generatedAChunk = true;
 			}
 		}
 	}
 
-	if (!generatedAChunk && kernelSize < 20)
+	if (!generatedAChunk && kernelSize < 5)
 	{
-		TrySpawnChunks(kernelSize + 4);
+		TrySpawnChunks(kernelSize + 1);
 	}
 	
 	return true;
@@ -355,7 +358,7 @@ int main()
 	shader.Set("far", far);
 
 	glViewport(0, 0, ScreenWidth, ScreenHeight);
-	v3 skyColor = { 0.082f, 0.721f, 0.901f };
+	v3 skyColor = { 0.082f, 0.21f, 0.201f };
 	glClearColor(skyColor.x, skyColor.y, skyColor.z, 1);
 	shader.Set("fogColor", skyColor);
 
@@ -395,7 +398,7 @@ int main()
 			v3 worldPos = chunks[i].chunkPos * (s32)ChunkDim;
 			v3 camPosXZ = { camPos.x, 0, camPos.z };
 			f32 distance = glm::distance(worldPos, camPosXZ);
-			if (distance < 500)
+			if (distance < 100)
 			{
 				std::vector<CubeFace> faces = chunks[i].faces;
 				glBufferData(GL_SHADER_STORAGE_BUFFER, faces.size() * sizeof(CubeFace), (void*)faces.data(), GL_DYNAMIC_DRAW);

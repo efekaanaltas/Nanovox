@@ -55,25 +55,30 @@ void main()
 		vec3(5/255.0, 146/255.0, 18/255.0),
 		vec3(6/255.0, 208/255.0, 1/255.0),
 		vec3(155/255.0, 236/255.0, 0/255.0),
-		vec3(43/255.0, 255/255.0, 144/255.0),
-		vec3(0.1, 1.0, 0.1),
-		vec3(0.8, 0.9, 0.2)
+		vec3(200/255.0, 200/255.0, 200/255.0),
+		vec3(0.0, 0.9, 1.0),
+		vec3(0.7, 0.7, 0.7)
 	);
 
-	vec3 mainGreen = materials[3];
+	vec3 mainGreen = materials[5];
 	vec3 col = materials[material];
-	col = mix(col, mainGreen, 0.4);
+	col = mix(col, mainGreen, 0.8);
 
 	vec3 seaColor = vec3(0.2, 0.491, 0.601) + vec3(0.2);
 
-	col = mix(col, seaColor, WorldPos.yyy/16.0);
+	//col = mix(col, seaColor, WorldPos.yyy/16.0);
+
+	if(material == 3 || material == 4)
+	{
+		col = materials[material];
+	}
 
 	vec3 ambient = col/3.0;
 	vec3 shaded = col*lighting+ambient;
 	float z = gl_FragCoord.z;
 	float linearDepth = LinearDepth(z, near, far);
 	float linearDepth01 = linearDepth / far;
-	vec3 fogged = mix(shaded, fogColor, clamp(linearDepth01, 0, 1));
+	vec3 fogged = mix(shaded, fogColor, clamp(linearDepth01*7, 0, 1));
 
 	color = vec4(fogged, 1.0);
 }
